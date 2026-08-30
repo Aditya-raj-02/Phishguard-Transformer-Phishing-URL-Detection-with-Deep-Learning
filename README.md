@@ -1,71 +1,71 @@
-# 🛡️ PhishGuard: Real-Time Phishing Detection Pipeline
+# PhishGuard-Transformer
 
-![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
-![React](https://img.shields.io/badge/React-Vite-blueviolet.svg)
-![Machine Learning](https://img.shields.io/badge/ML-XGBoost-orange.svg)
+Phishing URL detection using two different approaches - a classic ML model (XGBoost on hand-picked URL features) and a fine-tuned deep learning model (DistilBERT on raw URL text) - compared head to head on the same data.
 
-PhishGuard is a full-stack, end-to-end machine learning project designed to detect malicious phishing URLs in real-time. It moves beyond simple signature-based blacklists by utilizing structural and lexical feature extraction to identify zero-day phishing attempts.
+## Why this project
 
-**[📄 View the Full Architecture & Implementation PDF Report](./PhishGuard_Project_Report.pdf)**
+Phishing detection is a good real-world problem because it's not solved by a blacklist - new phishing domains show up constantly, so a model needs to catch patterns in the URL itself rather than just checking against a list of known-bad sites. I wanted to see how much a transformer model actually improves over a well-built classic ML baseline for this, instead of just assuming deep learning is better.
 
-## 🎥 Live Demonstration
+## Dataset
 
-Watch the system seamlessly integrate the ML model, FastAPI backend, and React UI to intercept threats in real-time.
+[PhiUSIIL Phishing URL Dataset](https://www.kaggle.com/datasets/ndarvind/phiusiil-phishing-url-dataset) - 235,795 real URLs (100,945 phishing / 134,850 legitimate). I balanced and sampled down to 12,000 URLs (6,000 each class) for this project, split 70/15/15 into train/val/test.
 
-🔗 **[Click Here to Watch the Demo Video](https://drive.google.com/file/d/13HgeUIEexdacKUpiUEhv5bRWQPOsmC7A/view?usp=drive_link)])**
+## Approach
 
----
+**1. Classic ML baseline (XGBoost)**
+Extracted 12 lexical/host-based features from each URL - things like length, number of subdomains, HTTPS presence, character entropy, presence of an IP address instead of a domain, suspicious keywords like "login" or "verify". Trained an XGBoost classifier on these.
 
-## 🧠 System Architecture
+**2. Deep learning (DistilBERT)**
+Fine-tuned DistilBERT directly on the raw URL text, no manual features - the model learns its own representation from the characters/subwords. Built with TensorFlow/Keras.
 
-The project is decoupled into four primary components:
+**3. Comparison**
+Both models trained and evaluated on the exact same train/val/test split, so the comparison is fair.
 
-1.  **The ML Brain:** An XGBoost classification model trained on a balanced dataset of verified phishing URLs (PhishTank) and dynamically generated safe URLs. Achieves >95% accuracy using lexical feature engineering (URL length, hyphen counts, IP presence, sensitive keywords).
-2.  **The Backend API:** A high-performance REST API built with `FastAPI` serving the serialized `joblib` model for sub-500ms inference.
-3.  **The Chrome Extension:** A Manifest V3 browser extension that intercepts the active tab's URL and communicates asynchronously with the backend.
-4.  **The Analyst Dashboard:** A centralized, dark-mode React (Vite) interface for manual threat scanning and organizational telemetry.
+## Results
 
+| Model | Accuracy | Precision | Recall | F1 |
+|---|---|---|---|---|
+| XGBoost (lexical features) | 99.28% | 99.66% | 98.89% | 99.27% |
+| DistilBERT (raw URL text) | 99.72% | 100.00% | 99.44% | 99.72% |
 
+DistilBERT beat the classic model on every metric - about 61% fewer errors on the test set (13 wrong for XGBoost vs 5 wrong for DistilBERT, out of 1800). Precision hit a perfect 100%, meaning it never flagged a legitimate URL as phishing in the test set.
 
+One interesting finding from the XGBoost side: feature importance showed that `has_https` and `num_subdirs` alone account for about 98% of the model's decisions - the other 10 features barely mattered. My guess for why DistilBERT does better is it's picking up on subtler character-level patterns (like typosquatting) that these two dominant features don't capture.
 
+## Demo
 
-# 🚀 How to Run Locally
-If you wish to run the PhishGuard environment locally, you will need two separate terminal instances.
+Built a Streamlit app that loads both models and shows both predictions side by side for any URL you paste in.
 
+```
+pip install streamlit xgboost transformers==4.57.6 tf-keras tensorflow
+streamlit run app.py
+```
 
-## 1. The Chrome Extension (User View)
-This is the component that actually gets installed and saved directly into your browser to scan live websites. If this is the part you were actually trying to add to Chrome, here is how you do it:
+(Note: pinned `transformers==4.57.6` since newer versions dropped TensorFlow support entirely.)
 
-### Open Google Chrome and navigate to chrome://extensions/.
-### Turn on Developer mode in the top right.
-### Click the Load unpacked button in the top left.
-### Select your PhishGuard folder(where your all files are).
+## Project structure
 
+```
+├── 01_dataset_preparation.ipynb      # cleaning, balancing, splitting the data
+├── 02_classic_ml_baseline.ipynb      # XGBoost + feature engineering
+├── 03_distilbert_finetuning.ipynb    # DistilBERT fine-tuning (run in Colab, T4 GPU)
+├── app.py                             # Streamlit demo
+├── train.csv / val.csv / test.csv     # the data splits used by every notebook
+├── xgboost_phishing_model.json        # saved XGBoost model
+├── xgboost_results.json               # XGBoost test metrics
+├── distilbert_results.json            # DistilBERT test metrics
+├── model_comparison.csv               # both models' metrics side by side
+└── phishnet_distilbert_final/         # saved fine-tuned DistilBERT model (not in repo, see below)
+```
 
-## 2. Start the Backend Server (Terminal 1)
-### Install required Python dependencies
-python -m pip install fastapi uvicorn xgboost pandas joblib
-### Launch the FastAPI inference server
-python -m uvicorn app:app --reload
+`phishnet_distilbert_final/` isn't included in this repo since it's a full model checkpoint - regenerate it by running `03_distilbert_finetuning.ipynb` in Colab, or reach out if you want the trained weights directly.
 
+## Tech stack
 
-## 3. Start the React Dashboard (Terminal 2)
-### Navigate to the frontend directory
-cd dashboard
-### Install Node modules
-npm install
-npm install lucide-react
-### Launch the Vite development server
-npm run dev
-### copy link like (http://localhost:5173) appeared in the terminal.
+Python, Pandas, Scikit-learn, XGBoost, TensorFlow/Keras, HuggingFace Transformers, Streamlit
 
+## What I'd do differently with more time
 
-# 2: Open it in Google Chrome
-Once your terminal says the server is running and gives you a local network link, you can open it!
-### Open Google Chrome.
-### Click on the address bar at the very top.
-### Type in your local address(http://localhost:5173).
-### Press Enter. Your dark-mode PhishGuard Analyst Dashboard will immediately load.
-
-
+- Look closer at the 5 URLs DistilBERT still gets wrong, see if there's a pattern
+- Try a larger sample of the dataset instead of 12k
+- Add basic domain-age lookup as an extra signal (didn't want to add backend/API dependency for this version)
